@@ -1,0 +1,10 @@
+[package]
+name = "bedrock-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+proto = { path ="./proto"}
+rak-rs = { version = "0.3.3", default-features = false, features = [ "async_tokio", "mcpe" ] }
+rand = { version = "0.8.5", features = [] }
