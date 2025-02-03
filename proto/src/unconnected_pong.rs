@@ -13,10 +13,9 @@ impl Debug for UnconnectedPong {
 }
 
 impl Packet for UnconnectedPong {
-
     fn serialize(&self) -> Vec<u8> {
-        let mut serialized = vec![];
-        serialized.reserve_exact(35+self.data.len());
+        let mut serialized = Vec::with_capacity(35+self.data.len()); // 34 bytes for header + packet id + data
+        serialized.push(PacketId::UnconnectedPong as u8);
 
         serialized.extend_from_slice(&self.client_send_time_be.to_be_bytes());
         serialized.extend_from_slice(&self.server_guid_be.to_be_bytes());
@@ -39,11 +38,5 @@ impl Packet for UnconnectedPong {
             server_guid_be: client_guid_be,
             data: data[32..].to_vec(),
         })
-    }
-
-    fn new(_data: Vec<u8>) -> Self where Self: Sized {
-        Self {
-            client_send_time_be: 0,server_guid_be: 0,data: vec![]
-        }
     }
 }

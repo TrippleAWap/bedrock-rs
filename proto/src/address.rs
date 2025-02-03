@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use crate::types::read_be_u16;
 
 pub const SIZEOF_ADDR4: u8 = 1 + 4 + 2;
 pub const SIZEOF_ADDR6: u8 = 1 + 2 + 2 + 4 + 16 + 4;
@@ -29,15 +30,15 @@ impl Addr {
 }
 #[derive(Debug, PartialEq)]
 pub struct Address {
-    addr: Addr,
-    port: u16,
-    addr_type: AddrType,
+    pub addr: Addr,
+    pub port: u16,
+    pub addr_type: AddrType,
 }
 
 
 impl Address {
     pub fn fmt(&self) -> String {
-        format!("{:?}:{}", self.addr, self.port)
+        format!("{}:{}", self.addr.to_bytes().iter().map(|&b| format!("{}", b as char)).collect::<String>(), self.port)
     }
     pub fn size(&self) -> u8 {
         match self.addr_type {
@@ -45,11 +46,10 @@ impl Address {
             AddrType::IPv6 => SIZEOF_ADDR6,
             AddrType::Zero => 5,
         }
-        }
+    }
 }
 
 pub fn serialize_addr(addr: &Address) -> Vec<u8> {
-
     if addr.addr_type == AddrType::IPv4 {
         // IPv4 address.
         let addr_bytes = addr.addr.to_bytes();
@@ -79,7 +79,7 @@ pub fn read_addr(buf: &[u8]) -> Result<Address, String> {
         _ => AddrType::IPv6,
     };
     if addr_type == AddrType::IPv6 {
-        let port = u16::from_be_bytes(buf[3..].try_into().map_err(|_| "Failed to read port")?);
+        let port = read_be_u16(buf[3..].try_into().map_err(|e| "Failed to read port")?);
         let mut ip = [0u8; 16];
         ip.copy_from_slice(&buf[9..]);
         Ok(Address {
@@ -93,11 +93,18 @@ pub fn read_addr(buf: &[u8]) -> Result<Address, String> {
         ip[1] = !buf[2];
         ip[2] = !buf[3];
         ip[3] = !buf[4];
-        let port = u16::from_be_bytes(buf[5..].try_into().map_err(|_| "Failed to read port")?);
+        let port = read_be_u16(buf[5..].try_into().map_err(|_| "Failed to read port")?);
         Ok(Address {
             addr: Addr::Addr4(ip),
             port,
             addr_type,
         })
     }
+}
+
+pub fn addr_size(b: &[u8]) -> u8 {
+    if b.len() == 0 || b[0] == 4 || b[0] == 0 {
+        return SIZEOF_ADDR4
+    }
+    SIZEOF_ADDR6
 }

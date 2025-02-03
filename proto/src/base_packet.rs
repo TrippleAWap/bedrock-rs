@@ -1,6 +1,5 @@
-use std::cmp::min;
-use std::ops::BitAnd;
 use crate::types::{read_u24, U24};
+use std::cmp::min;
 pub enum Reliability {
     Unreliable,
     UnreliableSequenced,
@@ -87,15 +86,15 @@ pub fn handle_type(buf: &[u8]) -> Result<u8, String> {
     Ok(buf[0])
 }
 
-fn handle_datagram(p0: &[u8]) -> Result<u8, String> {
+fn handle_datagram(_buf: &[u8]) -> Result<u8, String> {
     panic!("handle_datagram Not implemented yet")
 }
 
-fn handle_nack(p0: &[u8]) -> Result<u8, String> {
+fn handle_nack(_buf: &[u8]) -> Result<u8, String> {
     panic!("handle_nack Not implemented yet")
 }
 
-fn handle_ack(p0: &[u8]) -> Result<u8, String> {
+fn handle_ack(_buf: &[u8]) -> Result<u8, String> {
     panic!("handle_ack Not implemented yet")
 }
 

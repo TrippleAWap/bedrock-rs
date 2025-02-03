@@ -5,5 +5,4 @@ edition = "2021"
 
 [dependencies]
 tokio = "1.43.0"
-rak-rs = { version = "0.3.3", default-features = false, features = [ "async_tokio", "mcpe" ] }
-log = "0.4.25"
+lazy_static = "1.5.0"

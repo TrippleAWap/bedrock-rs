@@ -1,16 +1,15 @@
 use std::fmt::Debug;
-
 pub trait Packet: Debug {
     fn serialize(&self) -> Vec<u8>;
     fn deserialize(data: &[u8]) -> Result<Self, String> where Self: Sized;
-    fn new(data: Vec<u8>) -> Self where Self: Sized;
 }
 
 // sequence of bytes used to identify unconnected messages
 pub const UNCONNECTED_MESSAGE_SEQUENCE: [u8; 16] = [0x00, 0xff, 0xff, 0x00, 0xfe, 0xfe, 0xfe, 0xfe, 0xfd, 0xfd, 0xfd, 0xfd, 0x12, 0x34, 0x56, 0x78];
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum PacketId {
+    #[default]
     ConnectedPing                   = 0x00,
     UnconnectedPing                 = 0x01,
     UnconnectedPingOpenConnections  = 0x02,
@@ -29,7 +28,7 @@ pub enum PacketId {
 
     UnconnectedPong                 = 0x1C,
 
-    Unknown = 0xff
+    Unknown                         = 0xFF,
 }
 
 impl From<u8> for PacketId {
@@ -51,6 +50,8 @@ impl From<u8> for PacketId {
 
             0x19 => PacketId::IncompatibleProtocolVersion,
 
+            0x1C => PacketId::UnconnectedPong,
+            
             _ => PacketId::Unknown,
         }
     }
@@ -79,4 +80,14 @@ pub fn inc_u24(value: &mut U24) -> U24 {
 pub fn read_be_u64(input: &[u8]) -> u64 {
     let (int_bytes, _) = input.split_at(size_of::<u64>());
     u64::from_be_bytes(int_bytes.try_into().unwrap())
+}
+
+pub fn read_be_u32(input: &[u8]) -> u32 {
+    let (int_bytes, _) = input.split_at(size_of::<u32>());
+    u32::from_be_bytes(int_bytes.try_into().unwrap())
+}
+
+pub fn read_be_u16(input: &[u8]) -> u16 {
+    let (int_bytes, _) = input.split_at(size_of::<u16>());
+    u16::from_be_bytes(int_bytes.try_into().unwrap())
 }

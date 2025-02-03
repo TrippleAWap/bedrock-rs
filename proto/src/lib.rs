@@ -25,35 +25,33 @@ pub mod unconnected_ping;
 pub mod unconnected_pong;
 pub mod address;
 pub mod base_packet;
+pub mod motd;
+pub mod open_connection_request_1;
+pub mod open_connection_reply_1;
+pub mod open_connection_request_2;
 
 use types::{Packet, PacketId};
 use unknown::UnknownPacket;
 use unconnected_ping::UnconnectedPing;
 use unconnected_pong::UnconnectedPong;
+use open_connection_request_1::OpenConnectionRequest1;
+use open_connection_request_2::OpenConnectionRequest2;
+use open_connection_reply_1::OpenConnectionReply1;
 
 #[derive(Debug)]
 pub enum PacketT {
     Unknown(UnknownPacket),
     UnconnectedPing(UnconnectedPing),
     UnconnectedPong(UnconnectedPong),
+    OpenConnectionRequest1(OpenConnectionRequest1),
+    OpenConnectionRequest2(OpenConnectionRequest2),
+    OpenConnectionReply1(OpenConnectionReply1),
 }
 
 #[allow(non_snake_case)]
 pub fn ReadPacket(data: &[u8]) -> Result<PacketT, String> {
-    // let packet = match base_packet::BasePacket::read(data) {
-    //     Ok(packet) => packet,
-    //     Err(err) => return Err(format!("Error reading base packet: {}", err)),
-    // };
-    // let data = &packet.data;
-    // if data.len() < 1 {
-    //     return Err("Invalid packet data length".to_string());
-    // }
     let packetId = &data[0].into();
-    //
-    // let address  = match  read_addr(&data[1..]) {
-    //     Ok(addr) => addr,
-    //     Err(err) => return Err(format!("Error reading address: {}", err)),
-    // };
+
     let packetData = &data[1..];
     match packetId {
         &PacketId::UnconnectedPing => {
@@ -66,11 +64,20 @@ pub fn ReadPacket(data: &[u8]) -> Result<PacketT, String> {
                 .map(|packet| PacketT::UnconnectedPong(packet))
                 .map_err(|err| format!("Error deserializing UnconnectedPong packet: {:?}", err.to_string()))
         },
-        &PacketId::Unknown => {
+        &PacketId::OpenConnectionRequest1 => {
+            OpenConnectionRequest1::deserialize(packetData)
+                .map(|packet| PacketT::OpenConnectionRequest1(packet))
+                .map_err(|err| format!("Error deserializing OpenConnectionRequest1 packet: {:?}", err.to_string()))
+        }
+        &PacketId::OpenConnectionRequest2 => {
+            OpenConnectionRequest2::deserialize(packetData)
+                .map(|packet| PacketT::OpenConnectionRequest2(packet))
+                .map_err(|err| format!("Error deserializing OpenConnectionRequest2 packet: {:?}", err.to_string()))
+        }
+        _ => {
             UnknownPacket::deserialize(packetData)
                 .map(|packet| PacketT::Unknown(packet))
                 .map_err(|err| format!("Error deserializing Unknown packet: {:?}", err.to_string()))
         },
-        _ => Err(format!("Unhandled packet type: {}", *packetId as u8)),
     }
 }
