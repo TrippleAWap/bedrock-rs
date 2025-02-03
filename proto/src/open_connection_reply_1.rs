@@ -5,7 +5,7 @@ pub struct OpenConnectionReply1 {
     pub server_guid_be: u64,
     pub server_has_security: bool,
     pub cookie: u32,
-    pub max_transmission_unit_be: usize,
+    pub max_transmission_unit_be: u16,
 }
 
 impl Debug for OpenConnectionReply1 {
@@ -40,7 +40,7 @@ impl Packet for OpenConnectionReply1 {
         if server_has_security {
             cookie = u32::from_be_bytes(data[25..29].try_into().unwrap());
         }
-        let max_transmission_unit_be = usize::from_be_bytes(data[25+((server_has_security as u8) * 4) as usize..data.len()-1].try_into().unwrap());
+        let max_transmission_unit_be = u16::from_be_bytes(data[25+((server_has_security as u8) * 4) as usize..data.len()-1].try_into().unwrap());
 
         Ok(OpenConnectionReply1 {
             server_guid_be,

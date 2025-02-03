@@ -69,7 +69,6 @@ pub fn serialize_addr(addr: &Address) -> Vec<u8> {
 }
 
 pub fn read_addr(buf: &[u8]) -> Result<Address, String> {
-    println!("read_addr: buf: {:?}", buf);
     if buf.len() < 5 {
         return Err("Invalid address length".to_string());
     }
@@ -79,7 +78,7 @@ pub fn read_addr(buf: &[u8]) -> Result<Address, String> {
         _ => AddrType::IPv6,
     };
     if addr_type == AddrType::IPv6 {
-        let port = read_be_u16(buf[3..].try_into().map_err(|e| "Failed to read port")?);
+        let port = read_be_u16(buf[3..].try_into().map_err(|_| "Failed to read port")?);
         let mut ip = [0u8; 16];
         ip.copy_from_slice(&buf[9..]);
         Ok(Address {
