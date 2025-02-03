@@ -26,6 +26,7 @@ async fn main()  -> std::io::Result<()> {
         Ok(client(target_address).await?)
     }
 }
+#[allow(dead_code)]
 struct RateStats {
     pub tick: u64,
     pub packets_sent: u64,
@@ -46,28 +47,28 @@ async fn server(target_address: String) -> std::io::Result<()> {
             // check if current time is after expire;
             match SystemTime::now().duration_since(*blacklist_expire) {
                 Ok(duration) => {
-                    println!("Unblacklisting IP {} after {} seconds", src.ip(), duration.as_secs());
+                    println!("Unblacklisting IP {}", src.ip());
                     blacklist.remove(&src.ip());
                 }
                 Err(_) => {
-                    println!("Recieved packet from blacklisted IP {} before expiration, {} left", src.ip(), 
-                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64 - 
-                    blacklist_expire.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64);
+                    // println!("Recieved packet from blacklisted IP {} before expiration, {} left", src.ip(), 
+                    // SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64 - 
+                    // blacklist_expire.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64);
                     continue;
                 }
             }
         }
 
-        let received_data = &buf[..len];
-        let tick = f64::floor(SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as f64 / 1000.0) as u64;
+        let tick = f64::floor(SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as f64 / 20.0) as u64;
         if rates.contains_key(&src) {
             let rate = rates.get_mut(&src).unwrap();
             if rate.tick != tick {
                 rate.tick = tick;
+                println!("Cleared RateStats for {} ({} packets/s)", src, rate.packets_sent);
                 rate.packets_sent = 0;
             }
             rate.packets_sent += 1;
-            if rate.packets_sent > 300 {
+            if rate.packets_sent >= 5000 {
                 println!("Flooding detected from {} ({} packets/s)", src, rate.packets_sent);
                 blacklist.insert(src.ip(), SystemTime::now() + std::time::Duration::from_secs(10));
                 continue;
@@ -80,6 +81,7 @@ async fn server(target_address: String) -> std::io::Result<()> {
 
             rates.insert(src, rate);
         }
+        let received_data = &buf[..len];
         match ReadPacket(received_data) {
             Ok(packet) => {
                 // println!("Received {:?}", packet);

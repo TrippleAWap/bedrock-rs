@@ -28,6 +28,8 @@ pub enum PacketId {
 
     UnconnectedPong                 = 0x1C,
 
+    GamePacket                      = 0xFE,
+
     Unknown                         = 0xFF,
 }
 
