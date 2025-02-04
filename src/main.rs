@@ -4,10 +4,11 @@ use rand::random;
 use std::collections::HashMap;
 use std::env::args_os;
 use std::net::{IpAddr, SocketAddr};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 use tokio::net::UdpSocket;
 use proto::open_connection_reply_1::OpenConnectionReply1;
 use proto::open_connection_request_1::OpenConnectionRequest1;
+use proto::open_connection_reply_2::OpenConnectionReply2;
 use proto::unconnected_ping::UnconnectedPing;
 
 #[tokio::main]
@@ -46,14 +47,11 @@ async fn server(target_address: String) -> std::io::Result<()> {
             let blacklist_expire = blacklist.get(&src.ip()).unwrap();
             // check if current time is after expire;
             match SystemTime::now().duration_since(*blacklist_expire) {
-                Ok(duration) => {
+                Ok(_duration) => {
                     println!("Unblacklisting IP {}", src.ip());
                     blacklist.remove(&src.ip());
                 }
                 Err(_) => {
-                    // println!("Recieved packet from blacklisted IP {} before expiration, {} left", src.ip(), 
-                    // SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64 - 
-                    // blacklist_expire.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64);
                     continue;
                 }
             }
@@ -84,7 +82,7 @@ async fn server(target_address: String) -> std::io::Result<()> {
         let received_data = &buf[..len];
         match ReadPacket(received_data) {
             Ok(packet) => {
-                // println!("Received {:?}", packet);
+                println!("Received {:?}", packet);
                 match packet {
                     PacketT::UnconnectedPing(packet) => {
                         let response =  UnconnectedPong{server_guid_be: server_id, client_send_time_be: packet.client_send_time_be, data: Vec::from("MCPE;Dedicated Server;766;1.21.51;0;10;13253860892328930865;Bedrock level;Survival;1;19132;19133;") };
@@ -92,6 +90,7 @@ async fn server(target_address: String) -> std::io::Result<()> {
                     }
                     PacketT::OpenConnectionRequest1(packet) => {
                         if packet.max_transmission_unit as usize > buf.len() {
+                            println!("Ignoring MTU {} as it is larger than buffer size", packet.max_transmission_unit);
                             continue;
                         }
 
@@ -109,11 +108,11 @@ async fn server(target_address: String) -> std::io::Result<()> {
                             continue;
                         }
 
-                        let response = OpenConnectionReply1{
-                            server_has_security: false,
+                        let response = OpenConnectionReply2{
+                            client_address: src.into(),
+                            do_security: packet.server_has_security,
+                            max_transmission_unit_be: 19200,
                             server_guid_be: server_id,
-                            max_transmission_unit_be: packet.max_transmission_unit as u16,
-                            cookie: 0,
                         };
 
                         socket.send_to(&response.serialize(), src).await?;

@@ -93,3 +93,8 @@ pub fn read_be_u16(input: &[u8]) -> u16 {
     let (int_bytes, _) = input.split_at(size_of::<u16>());
     u16::from_be_bytes(int_bytes.try_into().unwrap())
 }
+
+pub fn read_be_i64(input: &[u8]) -> i64 {
+    let (int_bytes, _) = input.split_at(size_of::<i64>());
+    i64::from_be_bytes(int_bytes.try_into().unwrap())
+}

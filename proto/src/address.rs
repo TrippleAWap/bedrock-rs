@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, net::SocketAddr};
 use crate::types::read_be_u16;
 
 pub const SIZEOF_ADDR4: u8 = 1 + 4 + 2;
@@ -45,6 +45,28 @@ impl Address {
             AddrType::IPv4 => SIZEOF_ADDR4,
             AddrType::IPv6 => SIZEOF_ADDR6,
             AddrType::Zero => 5,
+        }
+    }
+    pub fn serialize(&self) -> Vec<u8> {
+        serialize_addr(self)
+    }
+}
+
+impl From<SocketAddr> for Address {
+    fn from(sock_addr: SocketAddr) -> Self {
+        let addr_type = match sock_addr.ip() {
+            std::net::IpAddr::V4(_) => AddrType::IPv4,
+            std::net::IpAddr::V6(_) => AddrType::IPv6,
+        };
+        let addr = match sock_addr.ip() {
+            std::net::IpAddr::V4(ip) => Addr::Addr4(ip.octets()),
+            std::net::IpAddr::V6(ip) => Addr::Addr6(ip.octets()),
+        };
+        let port = sock_addr.port();
+        Address {
+            addr,
+            port,
+            addr_type,
         }
     }
 }

@@ -29,6 +29,7 @@ pub mod motd;
 pub mod open_connection_request_1;
 pub mod open_connection_reply_1;
 pub mod open_connection_request_2;
+pub mod open_connection_reply_2;
 
 use types::{Packet, PacketId};
 use unknown::UnknownPacket;
