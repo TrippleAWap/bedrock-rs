@@ -30,7 +30,10 @@ pub mod open_connection_request_1;
 pub mod open_connection_reply_1;
 pub mod open_connection_request_2;
 pub mod open_connection_reply_2;
+pub mod connected_ping;
+pub mod connected_pong;
 
+use std::ops::BitAnd;
 use types::{Packet, PacketId};
 use unknown::UnknownPacket;
 use unconnected_ping::UnconnectedPing;
@@ -38,15 +41,26 @@ use unconnected_pong::UnconnectedPong;
 use open_connection_request_1::OpenConnectionRequest1;
 use open_connection_request_2::OpenConnectionRequest2;
 use open_connection_reply_1::OpenConnectionReply1;
+use open_connection_reply_2::OpenConnectionReply2;
+use connected_ping::ConnectedPing;
+use connected_pong::ConnectedPong;
+use crate::base_packet::PacketBitFlags;
 
 #[derive(Debug)]
 pub enum PacketT {
-    Unknown(UnknownPacket),
+    ConnectedPing(ConnectedPing),
+    ConnectedPong(ConnectedPong),
+
     UnconnectedPing(UnconnectedPing),
     UnconnectedPong(UnconnectedPong),
+
     OpenConnectionRequest1(OpenConnectionRequest1),
     OpenConnectionRequest2(OpenConnectionRequest2),
+
     OpenConnectionReply1(OpenConnectionReply1),
+    OpenConnectionReply2(OpenConnectionReply2),
+
+    Unknown(UnknownPacket),
 }
 
 #[allow(non_snake_case)]
@@ -55,6 +69,11 @@ pub fn ReadPacket(data: &[u8]) -> Result<PacketT, String> {
 
     let packetData = &data[1..];
     match packetId {
+        &PacketId::ConnectedPing => {
+            ConnectedPing::deserialize(packetData)
+                .map(|packet| PacketT::ConnectedPing(packet))
+                .map_err(|err| format!("Error deserializing ConnectedPing packet: {:?}", err.to_string()))
+        },
         &PacketId::UnconnectedPing => {
             UnconnectedPing::deserialize(packetData)
                 .map(|packet| PacketT::UnconnectedPing(packet))
@@ -76,9 +95,23 @@ pub fn ReadPacket(data: &[u8]) -> Result<PacketT, String> {
                 .map_err(|err| format!("Error deserializing OpenConnectionRequest2 packet: {:?}", err.to_string()))
         }
         _ => {
-            UnknownPacket::deserialize(packetData)
+            UnknownPacket::deserialize(data)
                 .map(|packet| PacketT::Unknown(packet))
                 .map_err(|err| format!("Error deserializing Unknown packet: {:?}", err.to_string()))
         },
     }
+}
+
+
+pub fn Recieve(data: &[u8]) -> Result<PacketT, String> {
+    if data[0]&PacketBitFlags::ACK as u8 != 0 {
+        println!("ACK packet received");
+    } else if data[0]&PacketBitFlags::NACK as u8 != 0 {
+        println!("Data packet received");
+    } else if data[0]&PacketBitFlags::Datagram as u8 != 0 {
+        println!("Datagram packet received");
+    } else {
+        println!("Unknown packet received");
+    }
+    ReadPacket(data)
 }

@@ -1,5 +1,5 @@
 use proto::types::Packet;
-use proto::{unconnected_pong::UnconnectedPong, PacketT, ReadPacket};
+use proto::{unconnected_pong::UnconnectedPong, PacketT, ReadPacket, Recieve};
 use rand::random;
 use std::collections::HashMap;
 use std::env::args_os;
@@ -10,7 +10,7 @@ use proto::open_connection_reply_1::OpenConnectionReply1;
 use proto::open_connection_request_1::OpenConnectionRequest1;
 use proto::open_connection_reply_2::OpenConnectionReply2;
 use proto::unconnected_ping::UnconnectedPing;
-
+use proto::connected_pong::ConnectedPong;
 #[tokio::main]
 async fn main()  -> std::io::Result<()> {
     let mut args = args_os();
@@ -62,7 +62,7 @@ async fn server(target_address: String) -> std::io::Result<()> {
             let rate = rates.get_mut(&src).unwrap();
             if rate.tick != tick {
                 rate.tick = tick;
-                println!("Cleared RateStats for {} ({} packets/s)", src, rate.packets_sent);
+                // println!("Cleared RateStats for {} ({} packets/s)", src, rate.packets_sent);
                 rate.packets_sent = 0;
             }
             rate.packets_sent += 1;
@@ -80,10 +80,14 @@ async fn server(target_address: String) -> std::io::Result<()> {
             rates.insert(src, rate);
         }
         let received_data = &buf[..len];
-        match ReadPacket(received_data) {
+        match Recieve(received_data) {
             Ok(packet) => {
                 println!("Received {:?}", packet);
                 match packet {
+                    PacketT::ConnectedPing(packet) => {
+                        let response = ConnectedPong{ client_send_time_be: packet.client_send_time_be };
+                        socket.send_to(&response.serialize(), src).await?;
+                    }
                     PacketT::UnconnectedPing(packet) => {
                         let response =  UnconnectedPong{server_guid_be: server_id, client_send_time_be: packet.client_send_time_be, data: Vec::from("MCPE;Dedicated Server;766;1.21.51;0;10;13253860892328930865;Bedrock level;Survival;1;19132;19133;") };
                         socket.send_to(&response.serialize(), src).await?;

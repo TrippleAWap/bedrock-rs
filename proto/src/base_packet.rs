@@ -145,11 +145,13 @@ pub fn read(buf: &[u8]) -> Result<BasePacket, String> {
         if buf.len() - offset < 10 {
             return Err("Packet too short".to_string());
         }
+
         packet.split_count = u32::from_be_bytes(buf[offset..].try_into().unwrap());
         packet.split_id = u16::from_be_bytes(buf[offset + 4..].try_into().unwrap());
         packet.split_index = u32::from_be_bytes(buf[offset + 6..].try_into().unwrap());
         offset += 10;
     }
+
     packet.data = Vec::with_capacity(packet_length as usize);
     if buf[offset..].len() < packet_length as usize {
         return Err("Packet too short".to_string());
