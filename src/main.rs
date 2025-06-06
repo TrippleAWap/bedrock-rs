@@ -1,30 +1,49 @@
 use proto::types::Packet;
-use proto::{unconnected_pong::UnconnectedPong, PacketT, ReadPacket, Recieve};
+use proto::{PacketT, ReceivePacket};
 use rand::random;
-use std::collections::HashMap;
 use std::env::args_os;
-use std::net::{IpAddr, SocketAddr};
+use std::process::exit;
+use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::net::UdpSocket;
-use proto::open_connection_reply_1::OpenConnectionReply1;
-use proto::open_connection_request_1::OpenConnectionRequest1;
-use proto::open_connection_reply_2::OpenConnectionReply2;
-use proto::unconnected_ping::UnconnectedPing;
-use proto::connected_pong::ConnectedPong;
+use proto::messages::open_connection_reply_1::OpenConnectionReply1;
+use proto::messages::open_connection_request_1::OpenConnectionRequest1;
+use proto::messages::open_connection_reply_2::OpenConnectionReply2;
+use proto::messages::unconnected_ping::UnconnectedPing;
+use proto::messages::unconnected_pong::UnconnectedPong;
+use proto::messages::connected_pong::ConnectedPong;
+
 #[tokio::main]
-async fn main()  -> std::io::Result<()> {
+async fn main() -> std::io::Result<()> {
     let mut args = args_os();
     if args.len() < 3 {
-        println!("Usage: {} <target_address> <client|server>", args.next().unwrap().to_str().unwrap());
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid argument"));
+        println!("Usage: {} <target_address> <client|server|ping>", args.next().unwrap().to_str().unwrap());
+        exit(1);
     }
-    let target_address = args.nth(1).unwrap().into_string().unwrap();
-    if !args.any(|a| a == "client") {
-        println!("Starting server");
-        Ok(server(target_address).await?)
-    } else {
-        println!("Starting client");
-        Ok(client(target_address).await?)
+
+    // skip the first arg;
+    args.next();
+
+    let target_address = args.next().unwrap().into_string().unwrap();
+    println!("Target address: {}", target_address);
+    let run_mode = args.next().unwrap().into_string().unwrap();
+    println!("Run mode: {}", run_mode);
+    match run_mode.as_str() {
+        "server" => {
+            println!("Starting server");
+            Ok(server(target_address).await?)
+        }
+        "client" => {
+            println!("Starting client");
+            Ok(client(target_address, false).await?)
+        }
+        "ping" => {
+            Ok(client(target_address, true).await?)
+        }
+        _ => {
+            println!("Invalid argument: {}", run_mode);
+            Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid argument"))
+        }
     }
 }
 #[allow(dead_code)]
@@ -32,64 +51,31 @@ struct RateStats {
     pub tick: u64,
     pub packets_sent: u64,
 }
+
 async fn server(target_address: String) -> std::io::Result<()> {
     println!("Listening on {}", target_address);
-
     let socket = UdpSocket::bind(target_address).await?;
     let server_id: u64 = random();
     let mut buf = [0u8; 1492];
-    let mut rates: HashMap<SocketAddr, RateStats> = HashMap::new(); 
-    let mut blacklist: HashMap<IpAddr, SystemTime> = HashMap::new();
     loop {
         let (len, src) = socket.recv_from(&mut buf).await?;
 
-        if blacklist.contains_key(&src.ip()) {
-            let blacklist_expire = blacklist.get(&src.ip()).unwrap();
-            // check if current time is after expire;
-            match SystemTime::now().duration_since(*blacklist_expire) {
-                Ok(_duration) => {
-                    println!("Unblacklisting IP {}", src.ip());
-                    blacklist.remove(&src.ip());
-                }
-                Err(_) => {
+        let received_data = &buf[..len];
+        match ReceivePacket(received_data) {
+            Ok(p) => {
+                if p.is_none() {
                     continue;
                 }
-            }
-        }
-
-        let tick = f64::floor(SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as f64 / 20.0) as u64;
-        if rates.contains_key(&src) {
-            let rate = rates.get_mut(&src).unwrap();
-            if rate.tick != tick {
-                rate.tick = tick;
-                // println!("Cleared RateStats for {} ({} packets/s)", src, rate.packets_sent);
-                rate.packets_sent = 0;
-            }
-            rate.packets_sent += 1;
-            if rate.packets_sent >= 5000 {
-                println!("Flooding detected from {} ({} packets/s)", src, rate.packets_sent);
-                blacklist.insert(src.ip(), SystemTime::now() + std::time::Duration::from_secs(10));
-                continue;
-            }
-        } else {
-            let rate = RateStats {
-                packets_sent: 1,
-                tick    
-            };
-
-            rates.insert(src, rate);
-        }
-        let received_data = &buf[..len];
-        match Recieve(received_data) {
-            Ok(packet) => {
+                let packet = p.unwrap();
                 println!("Received {:?}", packet);
                 match packet {
                     PacketT::ConnectedPing(packet) => {
                         let response = ConnectedPong{ client_send_time_be: packet.client_send_time_be };
                         socket.send_to(&response.serialize(), src).await?;
+                        println!("Sent ConnectedPong to {}", src);
                     }
                     PacketT::UnconnectedPing(packet) => {
-                        let response =  UnconnectedPong{server_guid_be: server_id, client_send_time_be: packet.client_send_time_be, data: Vec::from("MCPE;Dedicated Server;766;1.21.51;0;10;13253860892328930865;Bedrock level;Survival;1;19132;19133;") };
+                        let response =  UnconnectedPong{server_guid_be: server_id, client_send_time_be: packet.client_send_time_be, data: "MCPE;Dedicated Server;786;1.21.73;0;10;11954621141260796043;Bedrock level;Survival;1;19132;19133;0;".to_string() };
                         socket.send_to(&response.serialize(), src).await?;
                     }
                     PacketT::OpenConnectionRequest1(packet) => {
@@ -122,7 +108,7 @@ async fn server(target_address: String) -> std::io::Result<()> {
                         socket.send_to(&response.serialize(), src).await?;
                     }
                     _ => {
-                        println!("Received Unhandled packet id: 0x{:02X}", received_data[0]);
+                            println!("Received Unhandled packet id: 0x{:02X}", received_data[0]);
                     }
                 }
             }
@@ -133,47 +119,79 @@ async fn server(target_address: String) -> std::io::Result<()> {
     }
 }
 
-async fn client(target_address: String) -> std::io::Result<()> {
-    println!("Connecting to {}", target_address);
-
+async fn client(target_address: String, ping_only: bool) -> std::io::Result<()> {
+    println!("Connecting to {}", target_address.clone());
     let socket = UdpSocket::bind("0.0.0.0:0").await?;
     println!("Bound to {}", socket.local_addr()?);
-    socket.connect(target_address).await?;
-
-    let mut buf = [0u8; 1492];
-
+    let start_time = SystemTime::now();
+    socket.connect(target_address.clone()).await?;
+    println!("Connected to {} in {}ms", target_address, start_time.elapsed().unwrap().as_millis());
+    let mut buf = [0u8; 4096];
     socket.send(&UnconnectedPing { client_guid_be: 0, client_send_time_be: SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u64 }.serialize()).await?;
-
     let (len, src) = socket.recv_from(&mut buf).await?;
     let received_data = &buf[..len];
-    match ReadPacket(received_data) {
-        Ok(packet) => {
-            println!("Received packet from {}: {:?}", src, packet);
-            match packet {
-                PacketT::UnconnectedPong(_packet) => {
-                    println!("Received UnconnectedPong flooding with OpenConnectionRequest1");
-
-                    let response = OpenConnectionRequest1 {
-                        max_transmission_unit: 4096,
-                        client_protocol: 11,
-                    }.serialize();
-                    
-                    const X: usize = 300;
-                    println!("Sending OpenConnectionRequest1 to {} {} times", src, X);
-                    for i in 0..X {
-                        println!("Sending OpenConnectionRequest1 to {} ({}/{})", src, i+1, X);
-                        let _ = socket.send(&response);
-                    }
-                    println!("Done");
+    let mut max_mtu = 0;
+    let socket = Arc::new(tokio::sync::Mutex::new(socket));
+    loop {
+        match ReceivePacket(received_data) {
+            Ok(packet_v) => {
+                if packet_v.is_none() {
+                    continue
                 }
-                _ => {
-                    println!("Received Unsupported packet id: 0x{:02X}", received_data[0]);
+                let packet = packet_v.unwrap();
+                //println!("Received packet from {}    : {:?}", src, packet);
+                match packet {
+                    PacketT::OpenConnectionReply1(packet) => {
+                        println!("Received OpenConnectionReply1 from {} with MTU {}", src, packet.max_transmission_unit_be);
+                        max_mtu = packet.max_transmission_unit_be;
+                    }
+                    PacketT::UnconnectedPong(packet) => {
+                        if ping_only {
+                            println!("Received UnconnectedPong from {} [\x1b[32m{}\x1b[0m]", src, &packet.data);
+                            return Ok(());
+                        }
+                        let socket_clone = Arc::clone(&socket);
+
+                        _ = tokio::spawn(async move {
+                            let mut response = OpenConnectionRequest1 {
+                                max_transmission_unit: 1492,
+                                client_protocol: 255,
+                            };
+                            max_mtu = response.max_transmission_unit;
+                            match socket_clone.lock().await.send(&response.serialize()).await {
+                                Ok(_) => {
+                                    // println!("Sent OpenConnectionRequest1 with MTU {}", response.max_transmission_unit);
+                                }
+                                Err(e) => {
+                                    println!("Failed to send OpenConnectionRequest1: {}", e);
+                                }
+                            }
+                            for _ in 0..4 {
+                                for _ in 0..4 {
+                                    if max_mtu != 0 {
+                                        println!("Breaking {}", max_mtu);
+                                        break;
+                                    }
+                                    let sent_bytes= socket_clone.lock().await.send(&response.serialize()).await;
+                                    if sent_bytes.is_err() {
+                                        println!("Failed to send OpenConnectionRequest1");
+                                        break;
+                                    }
+                                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                                    // println!("Sent OpenConnectionRequest1 with MTU {}", response.max_transmission_unit);
+                                }
+                                response.max_transmission_unit -= 1024;
+                            }
+                        });
+                    }
+                    _ => {
+                        println!("Received Unsupported packet id: 0x{:02X}", received_data[0]);
+                    }
                 }
             }
-        }
-        Err(e) => {
-            println!("{:?}", e);
+            Err(e) => {
+                println!("{:?}", e);
+            }
         }
     }
-    Ok(())
 }

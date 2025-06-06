@@ -20,31 +20,27 @@ const DEFAULT_PROTOCOL_VERSION: u8= 	6;
 const NUMBER_OF_ARRANGED_STREAMS: u8= 	32;
 
 pub mod types;
-pub mod unknown;
-pub mod unconnected_ping;
-pub mod unconnected_pong;
 pub mod address;
-pub mod base_packet;
+pub mod packet;
 pub mod motd;
-pub mod open_connection_request_1;
-pub mod open_connection_reply_1;
-pub mod open_connection_request_2;
-pub mod open_connection_reply_2;
-pub mod connected_ping;
-pub mod connected_pong;
+pub mod messages;
+pub mod conn;
+pub mod frame;
+mod packet_queue;
+mod dynamic_queue;
 
-use std::ops::BitAnd;
+use std::net::Shutdown::Read;
 use types::{Packet, PacketId};
-use unknown::UnknownPacket;
-use unconnected_ping::UnconnectedPing;
-use unconnected_pong::UnconnectedPong;
-use open_connection_request_1::OpenConnectionRequest1;
-use open_connection_request_2::OpenConnectionRequest2;
-use open_connection_reply_1::OpenConnectionReply1;
-use open_connection_reply_2::OpenConnectionReply2;
-use connected_ping::ConnectedPing;
-use connected_pong::ConnectedPong;
-use crate::base_packet::PacketBitFlags;
+use messages::unknown::UnknownPacket;
+use messages::unconnected_ping::UnconnectedPing;
+use messages::unconnected_pong::UnconnectedPong;
+use messages::open_connection_request_1::OpenConnectionRequest1;
+use messages::open_connection_request_2::OpenConnectionRequest2;
+use messages::open_connection_reply_1::OpenConnectionReply1;
+use messages::open_connection_reply_2::OpenConnectionReply2;
+use messages::connected_ping::ConnectedPing;
+use messages::connected_pong::ConnectedPong;
+use crate::packet::{PacketBitFlags, handle_ack, handle_datagram, handle_nack};
 
 #[derive(Debug)]
 pub enum PacketT {
@@ -64,6 +60,23 @@ pub enum PacketT {
 }
 
 #[allow(non_snake_case)]
+/// Parses the packet data directly without handling the packet type and flags.
+/// This should never be used in practice, instead use `ReceivePacket` which handles packet type and flags.
+/// Example usage:
+/// ```
+///     let (len, src) = socket.recv_from(&mut buf).await?;
+///
+///     // wont correctly parse datagrams, ack or nack packets
+///     let packet = ReadPacket(&buf[..len]);
+///     match packet {
+///         Ok(packet) => {
+///             println!("Received packet: {:#?}", packet);
+///         },
+///         Err(err) => {
+///             println!("Error parsing packet: {}", err);
+///         }
+///     }
+/// ```
 pub fn ReadPacket(data: &[u8]) -> Result<PacketT, String> {
     let packetId = &data[0].into();
 
@@ -101,17 +114,32 @@ pub fn ReadPacket(data: &[u8]) -> Result<PacketT, String> {
         },
     }
 }
-
-
-pub fn Recieve(data: &[u8]) -> Result<PacketT, String> {
+/// Parses the packet data and handles the packet type and flags.
+/// This is the `recommended` function in practice.
+/// Example usage:
+/// ```
+///     let (len, src) = socket.recv_from(&mut buf).await?;
+///
+///     // will correctly parse datagrams, nack and acks.
+///     let packet = ReceivePacket(&buf[..len]);
+///     match packet {
+///         Ok(packet) => {
+///             println!("Received packet: {:#?}", packet);
+///         },
+///         Err(err) => {
+///             println!("Error parsing packet: {}", err);
+///         }
+///     }
+/// ```
+#[allow(non_snake_case)]
+pub fn ReceivePacket(data: &[u8]) -> Result<Option<PacketT>, String> {
     if data[0]&PacketBitFlags::ACK as u8 != 0 {
-        println!("ACK packet received");
+        Ok(handle_ack(&data).ok())
     } else if data[0]&PacketBitFlags::NACK as u8 != 0 {
-        println!("Data packet received");
+        Ok(handle_nack(&data).ok())
     } else if data[0]&PacketBitFlags::Datagram as u8 != 0 {
-        println!("Datagram packet received");
+        Ok(handle_datagram(&data).ok())
     } else {
-        println!("Unknown packet received");
+        Ok(ReadPacket(&data).ok())
     }
-    ReadPacket(data)
 }

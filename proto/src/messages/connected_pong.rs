@@ -15,7 +15,7 @@ impl Packet for ConnectedPong {
     fn serialize(&self) -> Vec<u8> {
         let mut serialized = Vec::with_capacity(9);
 
-        serialized[0] = PacketId::ConnectedPong as u8;
+        serialized.push(PacketId::ConnectedPong as u8);
         serialized.extend_from_slice(&u64::to_be_bytes(self.client_send_time_be));
 
         serialized

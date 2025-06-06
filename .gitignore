@@ -1,2 +1,12 @@
-/target
-/.idea
+*
+!.gitattributes
+!.gitignore
+!readme.md
+!.gitkeep
+!*.rs
+!*.yml
+!Cargo.lock
+!Cargo.toml
+!*.bat
+!*.yaml
+!*/

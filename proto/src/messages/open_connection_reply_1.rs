@@ -21,10 +21,12 @@ impl Packet for OpenConnectionReply1 {
 
         result.extend_from_slice(&UNCONNECTED_MESSAGE_SEQUENCE);
         result.extend_from_slice(&(self.server_guid_be).to_be_bytes());
+
         result.push(self.server_has_security as u8);
         if self.server_has_security {
             result.extend_from_slice(&self.cookie.to_be_bytes());
         }
+
         result.extend_from_slice(&(self.max_transmission_unit_be as u64).to_be_bytes());
 
         result
@@ -34,12 +36,15 @@ impl Packet for OpenConnectionReply1 {
         if data.len() < 27 || data.len() < 27+data[24] as usize*4 {
             return Err("Invalid OpenConnectionReply1 packet".to_string());
         }
+        
         let server_guid_be = u64::from_be_bytes(data[16..24].try_into().expect("Slice with incorrect length"));
         let server_has_security = data[24] != 0;
-        let mut cookie = 0;
-        if server_has_security {
-            cookie = u32::from_be_bytes(data[25..29].try_into().unwrap());
-        }
+
+        let mut cookie = match server_has_security {
+            true => u32::from_be_bytes(data[25..29].try_into().unwrap()),
+            false => 0,
+        };
+
         let max_transmission_unit_be = u16::from_be_bytes(data[25+((server_has_security as u8) * 4) as usize..data.len()-1].try_into().unwrap());
 
         Ok(OpenConnectionReply1 {

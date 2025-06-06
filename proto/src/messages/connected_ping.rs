@@ -15,7 +15,7 @@ impl Packet for ConnectedPing {
     fn serialize(&self) -> Vec<u8> {
         let mut serialized = Vec::with_capacity(9);
 
-        serialized[0] = PacketId::ConnectedPing as u8;
+        serialized[1] = PacketId::ConnectedPing as u8;
         serialized.extend_from_slice(&u64::to_be_bytes(self.client_send_time_be));
 
         serialized

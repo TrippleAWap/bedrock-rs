@@ -1,5 +1,6 @@
-use std::{fmt::Debug, net::SocketAddr};
 use crate::types::read_be_u16;
+use std::{fmt::Debug, net::SocketAddr};
+use std::str::FromStr;
 
 pub const SIZEOF_ADDR4: u8 = 1 + 4 + 2;
 pub const SIZEOF_ADDR6: u8 = 1 + 2 + 2 + 4 + 16 + 4;
@@ -28,6 +29,40 @@ impl Addr {
         }
     }
 }
+impl FromStr for Addr {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut parts = s.split(':');
+        let ip_str = parts.next().ok_or("Invalid address format")?;
+        let ip = if ip_str.contains('.') {
+            let mut ip_bytes = [0u8; 4];
+            let parts = ip_str.split('.');
+            if parts.clone().count() != 4 {
+                return Err("Invalid IPv4 address format".to_string());
+            }
+            for (i, part) in parts.enumerate() {
+                let num = part.parse().map_err(|_| "Invalid IPv4 address format")?;
+                ip_bytes[i] = num;
+            }
+            Addr::Addr4(ip_bytes)
+        } else {
+            let mut ip_bytes = [0u8; 16];
+            let parts = ip_str.split(':');
+            if parts.clone().count() > 8 {
+                return Err("Invalid IPv6 address format".to_string());
+            }
+            for (i, part) in parts.enumerate() {
+                let num =
+                    u16::from_str_radix(part, 16).map_err(|_| "Invalid IPv6 address format")?;
+                ip_bytes[2 * i] = (num >> 8) as u8;
+                ip_bytes[2 * i + 1] = (num & 0xff) as u8;
+            }
+            Addr::Addr6(ip_bytes)
+        };
+        Ok(ip)
+    }
+}
 #[derive(Debug, PartialEq)]
 pub struct Address {
     pub addr: Addr,
@@ -35,10 +70,17 @@ pub struct Address {
     pub addr_type: AddrType,
 }
 
-
 impl Address {
     pub fn fmt(&self) -> String {
-        format!("{}:{}", self.addr.to_bytes().iter().map(|&b| format!("{}", b as char)).collect::<String>(), self.port)
+        format!(
+            "{}:{}",
+            self.addr
+                .to_bytes()
+                .iter()
+                .map(|&b| format!("{}", b as char))
+                .collect::<String>(),
+            self.port
+        )
     }
     pub fn size(&self) -> u8 {
         match self.addr_type {
@@ -49,6 +91,27 @@ impl Address {
     }
     pub fn serialize(&self) -> Vec<u8> {
         serialize_addr(self)
+    }
+}
+
+impl FromStr for Address {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut parts = s.split(':');
+        let ip_str = parts.next().ok_or("Invalid address format")?;
+        let port_str = parts.next().ok_or("Invalid address format")?;
+        let port = port_str.parse().map_err(|_| "Invalid port format")?;
+        let addr = Addr::from_str(ip_str)?;
+        let addr_type = match addr {
+            Addr::Addr4(_) => AddrType::IPv4,
+            Addr::Addr6(_) => AddrType::IPv6,
+        };
+        Ok(Address {
+            addr,
+            port,
+            addr_type,
+        })
     }
 }
 
@@ -75,7 +138,13 @@ pub fn serialize_addr(addr: &Address) -> Vec<u8> {
     if addr.addr_type == AddrType::IPv4 {
         // IPv4 address.
         let addr_bytes = addr.addr.to_bytes();
-       vec![4, !addr_bytes[0], !addr_bytes[1], !addr_bytes[2], !addr_bytes[3]];
+        vec![
+            4,
+            !addr_bytes[0],
+            !addr_bytes[1],
+            !addr_bytes[2],
+            !addr_bytes[3],
+        ];
     } else if addr.addr_type == AddrType::IPv6 {
         // IPv6 address.
         let mut ret = vec![6];
@@ -125,7 +194,7 @@ pub fn read_addr(buf: &[u8]) -> Result<Address, String> {
 
 pub fn addr_size(b: &[u8]) -> u8 {
     if b.len() == 0 || b[0] == 4 || b[0] == 0 {
-        return SIZEOF_ADDR4
+        return SIZEOF_ADDR4;
     }
     SIZEOF_ADDR6
 }

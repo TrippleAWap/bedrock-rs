@@ -58,14 +58,14 @@ impl From<u8> for PacketId {
         }
     }
 }
+#[allow(non_camel_case_types)]
+pub type uint24 = u32;
 
-pub type U24 = u32;
-
-pub fn read_u24(data: &[u8]) -> U24 {
+pub fn read_u24(data: &[u8]) -> uint24 {
     (data[0] as u32) | ((data[1] as u32) << 8) | ((data[2] as u32) << 16)
 }
 
-pub fn write_u24(value: U24) -> [u8; 3] {
+pub fn write_u24(value: uint24) -> [u8; 3] {
     [
         (value & 0xff) as u8,
         ((value >> 8) & 0xff) as u8,
@@ -73,7 +73,7 @@ pub fn write_u24(value: U24) -> [u8; 3] {
     ]
 }
 
-pub fn inc_u24(value: &mut U24) -> U24 {
+pub fn inc_u24(value: &mut uint24) -> uint24 {
     let result = *value;
     let _ = value.wrapping_add(1);
     result

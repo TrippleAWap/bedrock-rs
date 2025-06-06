@@ -1,5 +1,9 @@
-use crate::types::{read_u24, U24};
+use crate::types::{read_u24, uint24};
 use std::cmp::min;
+use lazy_static::lazy_static;
+use crate::{PacketT, ReadPacket};
+use crate::frame::Window;
+
 pub enum Reliability {
     Unreliable,
     UnreliableSequenced,
@@ -34,12 +38,12 @@ pub enum PacketBitFlags {
 
 // BasePacket is an encapsulation around every packet sent after the connection is
 // established.
-pub struct BasePacket {
+pub struct Packet {
     pub reliability: Reliability,
 
-    pub message_index: U24,
-    pub sequence_index: U24,
-    pub order_index: U24,
+    pub message_index: uint24,
+    pub sequence_index: uint24,
+    pub order_index: uint24,
 
     pub data: Vec<u8>,
     pub split: bool,
@@ -48,7 +52,22 @@ pub struct BasePacket {
     pub split_id: u16,
 }
 
-impl BasePacket {
+impl Default for Packet {
+    fn default() -> Self {
+        Self {
+            reliability: Reliability::Unreliable,
+            message_index: 0,
+            sequence_index: 0,
+            order_index: 0,
+            data: Vec::new(),
+            split: false,
+            split_count: 0,
+            split_index: 0,
+            split_id: 0,
+        }
+    }
+}
+impl Packet {
     pub fn reliable(&self) -> bool {
         match self.reliability {
             Reliability::Reliable | Reliability::ReliableOrdered | Reliability::ReliableSequenced => true,
@@ -70,36 +89,30 @@ impl BasePacket {
         }
     }
 }
-pub fn handle_type(buf: &[u8]) -> Result<u8, String> {
-    if buf.len() < 1 {
-        return Err(format!("Invalid packet length: {}", buf.len()));
-    }
-    if buf[0] & PacketBitFlags::ACK as u8 != 0 {
-        return handle_ack(&buf[1..]);
-    }
-    if buf[0] & PacketBitFlags::NACK as u8 != 0 {
-        return handle_nack(&buf[1..]);
-    }
-    if buf[0] & PacketBitFlags::Datagram as u8 != 0 {
-        return handle_datagram(&buf[1..]);
-    }
-    Ok(buf[0])
+
+lazy_static! {
+    pub static ref DATAGRAMS_WINDOW: tokio::sync::Mutex<Window> = tokio::sync::Mutex::new(Window::new());
 }
 
-fn handle_datagram(_buf: &[u8]) -> Result<u8, String> {
-    panic!("handle_datagram Not implemented yet")
+// TODO: handle datagrams
+// this raises an issue because datagrams are chunked packets meaning we need a new array per connection.
+// how do we do this!? ( might be time to make a new struct for connections :c )
+pub fn handle_datagram(data: &[u8]) -> Result<PacketT, String> {
+    println!("Received datagram");
+
+    Err("Datagram handling not implemented".to_string())
 }
 
-fn handle_nack(_buf: &[u8]) -> Result<u8, String> {
-    panic!("handle_nack Not implemented yet")
+pub fn handle_nack(data: &[u8]) -> Result<PacketT, String> {
+    ReadPacket(data)
 }
 
-fn handle_ack(_buf: &[u8]) -> Result<u8, String> {
-    panic!("handle_ack Not implemented yet")
+pub fn handle_ack(data: &[u8]) -> Result<PacketT, String> {
+    ReadPacket(data)
 }
 
-pub fn read(buf: &[u8]) -> Result<BasePacket, String> {
-    let mut packet = BasePacket {
+pub fn read(buf: &[u8]) -> Result<Packet, String> {
+    let mut packet = Packet {
         reliability: Reliability::Unreliable,
         message_index: 0,
         sequence_index: 0,
