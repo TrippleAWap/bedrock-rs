@@ -31,7 +31,6 @@ use messages::open_connection_reply_1::OpenConnectionReply1;
 use messages::open_connection_reply_2::OpenConnectionReply2;
 use messages::connected_ping::ConnectedPing;
 use messages::connected_pong::ConnectedPong;
-use crate::packet::{PacketBitFlags, handle_ack, handle_datagram, handle_nack};
 
 #[derive(Debug)]
 pub enum PacketT {
@@ -75,62 +74,33 @@ pub fn ReadPacket(data: &[u8]) -> Result<Option<PacketT>, String> {
     match packetId {
         &PacketId::ConnectedPing => {
             ConnectedPing::deserialize(packetData)
-                .map(|packet| PacketT::ConnectedPing(packet))
+                .map(|packet| Some(PacketT::ConnectedPing(packet)))
                 .map_err(|err| format!("Error deserializing ConnectedPing packet: {:?}", err.to_string()))
         },
         &PacketId::UnconnectedPing => {
             UnconnectedPing::deserialize(packetData)
-                .map(|packet| PacketT::UnconnectedPing(packet))
+                .map(|packet| Some(PacketT::UnconnectedPing(packet)))
                 .map_err(|err| format!("Error deserializing UnconnectedPing packet: {:?}", err.to_string()))
         },
         &PacketId::UnconnectedPong => {
             UnconnectedPong::deserialize(packetData)
-                .map(|packet| PacketT::UnconnectedPong(packet))
+                .map(|packet| Some(PacketT::UnconnectedPong(packet)))
                 .map_err(|err| format!("Error deserializing UnconnectedPong packet: {:?}", err.to_string()))
         },
         &PacketId::OpenConnectionRequest1 => {
             OpenConnectionRequest1::deserialize(packetData)
-                .map(|packet| PacketT::OpenConnectionRequest1(packet))
+                .map(|packet| Some(PacketT::OpenConnectionRequest1(packet)))
                 .map_err(|err| format!("Error deserializing OpenConnectionRequest1 packet: {:?}", err.to_string()))
         }
         &PacketId::OpenConnectionRequest2 => {
             OpenConnectionRequest2::deserialize(packetData)
-                .map(|packet| PacketT::OpenConnectionRequest2(packet))
+                .map(|packet| Some(PacketT::OpenConnectionRequest2(packet)))
                 .map_err(|err| format!("Error deserializing OpenConnectionRequest2 packet: {:?}", err.to_string()))
         }
         _ => {
             UnknownPacket::deserialize(data)
-                .map(|packet| PacketT::Unknown(packet))
+                .map(|packet| Some(PacketT::Unknown(packet)))
                 .map_err(|err| format!("Error deserializing Unknown packet: {:?}", err.to_string()))
         },
-    }
-}
-/// Parses the packet data and handles the packet type and flags.
-/// This is the `recommended` function in practice.
-/// Example usage:
-/// ```
-///     let (len, src) = socket.recv_from(&mut buf).await?;
-///
-///     // will correctly parse datagrams, nack and acks.
-///     let packet = ReceivePacket(&buf[..len]);
-///     match packet {
-///         Ok(packet) => {
-///             println!("Received packet: {:#?}", packet);
-///         },
-///         Err(err) => {
-///             println!("Error parsing packet: {}", err);
-///         }
-///     }
-/// ```
-#[allow(non_snake_case)]
-pub fn ReceivePacket(data: &[u8]) -> Result<Option<PacketT>, String> {
-    if data[0]&PacketBitFlags::ACK as u8 != 0 {
-        handle_ack(&data)
-    } else if data[0]&PacketBitFlags::NACK as u8 != 0 {
-        handle_nack(&data)
-    } else if data[0]&PacketBitFlags::Datagram as u8 != 0 {
-        handle_datagram(&data)
-    } else {
-        ReadPacket(&data)
     }
 }

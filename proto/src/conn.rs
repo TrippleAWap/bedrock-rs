@@ -133,6 +133,20 @@ impl Conn {
         // we calculate this.. im lazy i'll do this later.
         // self.round_trip_time = ;
     }
+
+    #[allow(non_snake_case)]
+    pub fn ReceivePacket(&self, data: &[u8]) -> Result<Option<PacketT>, String> {
+        if data[0]&PacketBitFlags::ACK as u8 != 0 {
+            self.handle_ack(&data)
+        } else if data[0]&PacketBitFlags::NACK as u8 != 0 {
+            self.handle_nack(&data)
+        } else if data[0]&PacketBitFlags::Datagram as u8 != 0 {
+            self.handle_datagram(&data)
+        } else {
+            ReadPacket(&data)
+        }
+    }
+
     pub async fn handle_datagram(&self, data: &[u8]) -> Result<Option<PacketT>, String> {
         let mut window = self.window.lock().await;
         let sequence_number = read_u24(&data[0..3]);
