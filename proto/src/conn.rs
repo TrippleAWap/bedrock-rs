@@ -27,14 +27,14 @@ pub struct Conn {
     pub round_trip_time: Arc<u64>,
     pub closing: Arc<bool>,
 
-    pub conn: UdpSocket,
+    pub conn: Arc<Mutex<UdpSocket>>,
     pub remote_address: Address,
 
     pub connected_rx: Option<oneshot::Receiver<()>>,
     pub connected_tx: Option<oneshot::Sender<()>>,
 
     pub buf: Mutex<Vec<u8>>,
-    pub close_conn: fn(UdpSocket),
+    pub close_conn: fn(Arc<Mutex<UdpSocket>>),
     pub ack_buf: Mutex<Vec<u8>>,
     pub nack_buf: Mutex<Vec<u8>>,
 
@@ -63,11 +63,11 @@ pub struct Conn {
 }
 
 impl Conn {
-    pub fn new(socket: UdpSocket, remote_address: Address, max_transmission_unit: u16) -> Self {
+    pub async fn new(socket: Arc<Mutex<UdpSocket>>, max_transmission_unit: u16) -> Self {
         let (tx, rx) = oneshot::channel::<()>();
         Self {
-            conn: socket,
-            remote_address,
+            remote_address: socket.lock().await.peer_addr().unwrap().into(),
+            conn: Arc::clone(&socket),
             max_transmission_unit,
 
             round_trip_time: Arc::new(0),
@@ -101,9 +101,11 @@ impl Conn {
             limits_enabled: true,
         }
     }
+
     pub fn effective_mtu(&self) -> u16 {
         self.max_transmission_unit - 28
     }
+
     pub async fn start_ticking(&mut self) {
         const INTERVAL: Duration = Duration::from_millis(100);
         let mut tick_count: i64 = 0;
@@ -119,29 +121,42 @@ impl Conn {
                 self.check_resend(system_time).await;
             }
             if tick_count%5 == 0 {
-                _ = self.conn.send(&ConnectedPing{client_send_time_be: system_time.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u64}.serialize());
+                _ = self.conn.lock().await.send(&ConnectedPing{client_send_time_be: system_time.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u64}.serialize());
             }
         }
     }
+    pub fn handle_nack(&self, data: &[u8]) -> Result<Option<PacketT>, String> {
+        ReadPacket(data)
+    }
+
+    pub fn handle_ack(&self, data: &[u8]) -> Result<Option<PacketT>, String> {
+        ReadPacket(data)
+    }
+
+    pub async fn send_ack(&self, missing: &[uint24], flags: PacketBitFlags, buf: &mut Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
+        panic!("send_ack: not implemented");
+    }
+
     pub async fn send_nack(&self, missing: &[uint24]) -> Result<(), Box<dyn std::error::Error>> {
         let res = self.send_ack(missing, PacketBitFlags::NACK, self.nack_buf.lock().await.as_mut()).await;
         self.nack_buf.lock().await.clear();
         res
     }
-    /// this function itself resends? (atleast in go-raknet, i might change that because that's weird)
+
+    // this function itself resends? (atleast in go-raknet, i might change that because that's weird)
     pub async fn check_resend(&mut self, now: SystemTime) {
         // we calculate this.. im lazy i'll do this later.
         // self.round_trip_time = ;
     }
 
     #[allow(non_snake_case)]
-    pub fn ReceivePacket(&self, data: &[u8]) -> Result<Option<PacketT>, String> {
+    pub async fn ReceivePacket(&self, data: &[u8]) -> Result<Option<PacketT>, String> {
         if data[0]&PacketBitFlags::ACK as u8 != 0 {
             self.handle_ack(&data)
         } else if data[0]&PacketBitFlags::NACK as u8 != 0 {
             self.handle_nack(&data)
         } else if data[0]&PacketBitFlags::Datagram as u8 != 0 {
-            self.handle_datagram(&data)
+            self.handle_datagram(&data).await
         } else {
             ReadPacket(&data)
         }
@@ -176,16 +191,9 @@ impl Conn {
             return Err(format!("receive datagram: queue window size is too big ({}->{})", window.lowest, window.highest).to_string())
         }
 
-        self.handle_datagram(&data[3..])
+        Box::pin(self.handle_datagram(&data[3..])).await
     }
 
-    pub fn handle_nack(data: &[u8]) -> Result<Option<PacketT>, String> {
-        ReadPacket(data)
-    }
-
-    pub fn handle_ack(data: &[u8]) -> Result<Option<PacketT>, String> {
-        ReadPacket(data)
-    }
 
 }
 
