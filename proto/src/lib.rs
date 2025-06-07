@@ -1,23 +1,14 @@
-#[allow(dead_code)]
-const MTU_SIZE: u16 = 1492;
-#[allow(dead_code)]
-const UDP_HEADER_SIZE: u8= 	28;
-#[allow(dead_code)]
-const PUBLIC_KEY_SIZE: u16= 	294;
-#[allow(dead_code)]
-const REQUEST_CHALLENGE_SIZE: u8= 	64;
-#[allow(dead_code)]
-const RESPONDING_ENCRYPTION_KEY: u8= 	128;
-#[allow(dead_code)]
-const MAX_NUMBER_OF_LOCAL_ADDRESSES: u8= 	10;
-#[allow(dead_code)]
-const IDENTITY_PROOF_SIZE: u16= 	294;
-#[allow(dead_code)]
-const CLIENT_PROOF_SIZE: u8= 	32;
-#[allow(dead_code)]
-const DEFAULT_PROTOCOL_VERSION: u8= 	6;
-#[allow(dead_code)]
-const NUMBER_OF_ARRANGED_STREAMS: u8= 	32;
+pub const MTU_SIZE: u16 = 1492;
+pub const MAX_WINDOW_SIZE: u16 = 2048;
+pub const UDP_HEADER_SIZE: u8 = 28;
+pub const PUBLIC_KEY_SIZE: u16 = 294;
+pub const REQUEST_CHALLENGE_SIZE: u8 = 64;
+pub const RESPONDING_ENCRYPTION_KEY: u8 = 128;
+pub const MAX_NUMBER_OF_LOCAL_ADDRESSES: u8 = 10;
+pub const IDENTITY_PROOF_SIZE: u16 = 294;
+pub const CLIENT_PROOF_SIZE: u8 = 32;
+pub const DEFAULT_PROTOCOL_VERSION: u8 = 11;
+pub const NUMBER_OF_ARRANGED_STREAMS: u8 = 32;
 
 pub mod types;
 pub mod address;
@@ -77,7 +68,7 @@ pub enum PacketT {
 ///         }
 ///     }
 /// ```
-pub fn ReadPacket(data: &[u8]) -> Result<PacketT, String> {
+pub fn ReadPacket(data: &[u8]) -> Result<Option<PacketT>, String> {
     let packetId = &data[0].into();
 
     let packetData = &data[1..];
@@ -134,12 +125,12 @@ pub fn ReadPacket(data: &[u8]) -> Result<PacketT, String> {
 #[allow(non_snake_case)]
 pub fn ReceivePacket(data: &[u8]) -> Result<Option<PacketT>, String> {
     if data[0]&PacketBitFlags::ACK as u8 != 0 {
-        Ok(handle_ack(&data).ok())
+        handle_ack(&data)
     } else if data[0]&PacketBitFlags::NACK as u8 != 0 {
-        Ok(handle_nack(&data).ok())
+        handle_nack(&data)
     } else if data[0]&PacketBitFlags::Datagram as u8 != 0 {
-        Ok(handle_datagram(&data).ok())
+        handle_datagram(&data)
     } else {
-        Ok(ReadPacket(&data).ok())
+        ReadPacket(&data)
     }
 }

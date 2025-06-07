@@ -1,15 +1,19 @@
 use std::collections::HashMap;
+use std::ops::{Add, Div};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
+use lazy_static::lazy_static;
 use tokio::net::UdpSocket;
 use tokio::sync::{oneshot, Mutex};
 use crate::address::Address;
 use crate::dynamic_queue::DynamicQueue;
 use crate::messages::connected_ping::ConnectedPing;
 use crate::messages::unknown::UnknownPacket;
-use crate::types::{uint24, Packet};
+use crate::types::{read_u24, uint24, Packet};
 use crate::frame::Window;
 use crate::packet_queue::PacketQueue;
+use crate::{PacketT, ReadPacket};
+use crate::packet::PacketBitFlags;
 
 // Current RakNet protocol version for Minecraft
 const PROTOCOL_VERSION: u8 = 11;
@@ -46,7 +50,7 @@ pub struct Conn {
 
     pub splits: HashMap<u16, Vec<Vec<u8>>>,
 
-    pub window: *mut Window,
+    pub window: Mutex<Window>,
 
     pub ack_slice: Mutex<Vec<uint24>>,
 
@@ -54,6 +58,8 @@ pub struct Conn {
     pub packets: DynamicQueue<Vec<u8>>,
 
     pub last_packet_time: Arc<*mut SystemTime>,
+
+    pub limits_enabled: bool,
 }
 
 impl Conn {
@@ -86,11 +92,13 @@ impl Conn {
             message_index: 0,
             split_id: 0,
 
-            window: Box::into_raw(Box::new(Window::new())),
+            window: Mutex::new(Window::new()),
             packet_queue: Box::into_raw(Box::new(PacketQueue::new())),
             close_conn: |socket| {
                 drop(socket)
             },
+
+            limits_enabled: true,
         }
     }
     pub fn effective_mtu(&self) -> u16 {
@@ -108,16 +116,62 @@ impl Conn {
                 break;
             }
             if tick_count%3 == 0 {
-                _ = Conn::check_resend(system_time).await;
+                self.check_resend(system_time).await;
             }
             if tick_count%5 == 0 {
                 _ = self.conn.send(&ConnectedPing{client_send_time_be: system_time.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u64}.serialize());
             }
         }
     }
-    pub async fn check_resend(timestamp: SystemTime) {
-        println!("Checking resend");
+    pub async fn send_nack(&self, missing: &[uint24]) -> Result<(), Box<dyn std::error::Error>> {
+        let res = self.send_ack(missing, PacketBitFlags::NACK, self.nack_buf.lock().await.as_mut()).await;
+        self.nack_buf.lock().await.clear();
+        res
     }
-    pub async fn write() {}
-    pub async fn read() {}
+    /// this function itself resends? (atleast in go-raknet, i might change that because that's weird)
+    pub async fn check_resend(&mut self, now: SystemTime) {
+        // we calculate this.. im lazy i'll do this later.
+        // self.round_trip_time = ;
+    }
+    pub async fn handle_datagram(&self, data: &[u8]) -> Result<Option<PacketT>, String> {
+        let mut window = self.window.lock().await;
+        let sequence_number = read_u24(&data[0..3]);
+        if !window.add(sequence_number) {
+            return Ok(None)
+        }
+        self.ack_slice.lock().await.push(sequence_number);
+
+        if window.shift() == 0 {
+            let round_trip_time = self.round_trip_time.clone();
+            let missing = match window.missing(Duration::from_millis(round_trip_time.clone().add(round_trip_time.div(2)))) {
+                Ok(missing) => missing,
+                Err(e) => {
+                    return Err(format!("Failed to get missing data from packet queue: {}", e))
+                }
+            };
+            if missing.len() > 0 {
+                match self.send_nack(&missing).await {
+                    Ok(_) => {},
+                    Err(e) => {
+                        return Err(format!("Failed to send nack: {}", e))
+                    }
+                }
+            }
+        }
+        if self.window.lock().await.len() > MAX_WINDOW_SIZE as usize && self.limits_enabled {
+            return Err(format!("receive datagram: queue window size is too big ({}->{})", window.lowest, window.highest).to_string())
+        }
+
+        self.handle_datagram(&data[3..])
+    }
+
+    pub fn handle_nack(data: &[u8]) -> Result<Option<PacketT>, String> {
+        ReadPacket(data)
+    }
+
+    pub fn handle_ack(data: &[u8]) -> Result<Option<PacketT>, String> {
+        ReadPacket(data)
+    }
+
 }
+
