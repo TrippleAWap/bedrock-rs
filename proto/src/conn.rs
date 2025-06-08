@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use std::ops::{Add, Div};
+use std::net::SocketAddr;
+use std::ops::{Add, Deref, Div};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use lazy_static::lazy_static;
@@ -28,7 +29,6 @@ pub struct Conn {
     pub closing: Arc<bool>,
 
     pub conn: Arc<Mutex<UdpSocket>>,
-    pub remote_address: Address,
 
     pub connected_rx: Option<oneshot::Receiver<()>>,
     pub connected_tx: Option<oneshot::Sender<()>>,
@@ -60,13 +60,13 @@ pub struct Conn {
     pub last_packet_time: Arc<*mut SystemTime>,
 
     pub limits_enabled: bool,
+    pub is_server: bool,
 }
 
 impl Conn {
-    pub async fn new(socket: Arc<Mutex<UdpSocket>>, max_transmission_unit: u16) -> Self {
+    pub async fn new(socket: Arc<Mutex<UdpSocket>>, max_transmission_unit: u16, is_server: bool) -> Self {
         let (tx, rx) = oneshot::channel::<()>();
         Self {
-            remote_address: socket.lock().await.peer_addr().unwrap().into(),
             conn: Arc::clone(&socket),
             max_transmission_unit,
 
@@ -99,6 +99,7 @@ impl Conn {
             },
 
             limits_enabled: true,
+            is_server
         }
     }
 
@@ -160,6 +161,25 @@ impl Conn {
         } else {
             ReadPacket(&data)
         }
+    }
+
+    // if possible move from using box as its slower
+    #[allow(non_snake_case)]
+    pub async fn WritePacket(&self, packet: Box<&dyn Packet>, immediate: bool) -> Result<Option<Vec<u8>>, tokio::io::Error> {
+        if self.is_server {
+            return Err(tokio::io::Error::new(tokio::io::ErrorKind::Other, "WritePacket: Server cannot send packets, please use WritePacketTo instead."))
+        }
+            // debug logs;
+            println!("WritePacket: {:?}", packet);
+            self.conn.lock().await.send(&packet.serialize()).await?;
+            Ok(None)
+    }
+    #[allow(non_snake_case)]
+    pub async fn WritePacketTo(&self, packet: Box<&dyn Packet>, src: SocketAddr, immediate: bool) -> Result<Option<Vec<u8>>, tokio::io::Error> {
+        // debug logs;
+        println!("WritePacketTo: {}:    {:?}", src, packet);
+        self.conn.lock().await.send_to(&packet.serialize(), src).await?;
+        Ok(None)
     }
 
     pub async fn handle_datagram(&self, data: &[u8]) -> Result<Option<PacketT>, String> {
