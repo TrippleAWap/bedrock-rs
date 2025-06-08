@@ -61,7 +61,7 @@ pub async fn server(local_addr: String) -> std::io::Result<()> {
                         let response = OpenConnectionReply2{
                             client_address: src.into(),
                             do_security: packet.server_has_security,
-                            max_transmission_unit_be: 19200,
+                            max_transmission_unit_be: 1492,
                             server_guid_be: server_id,
                         };
 
